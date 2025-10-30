@@ -1,0 +1,9 @@
+FROM php:8.2-apache
+
+# Copy your PHP files into the container
+COPY . /var/www/html/
+
+# Enable Apache rewrite module (optional)
+RUN a2enmod rewrite
+
+EXPOSE 80
