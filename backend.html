@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>UIU Shuttle Tracker</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #map { height: 100vh; width: 100%; }
+    #recenterBtn, #toggleDirectionBtn, #refreshBtn, #timeBtn {
+      position: absolute; z-index: 1000; padding: 10px 14px;
+      background-color: #007bff; color: white; border: none;
+      border-radius: 6px; font-size: 16px; cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    #recenterBtn { bottom: 20px; right: 20px; }
+    #toggleDirectionBtn { bottom: 70px; right: 20px; background-color: #28a745; }
+    #refreshBtn { top: 20px; right: 20px; background-color: #6c757d; }
+    #timeBtn { 
+      top: 70px;
+      right: 20px; 
+      background-color: #17a2b8;
+      font-family: 'Arial', sans-serif;
+      font-weight: bold;
+      min-width: 180px;
+    }
+    
+    /* Proper Arrow Compass */
+    #compass {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: white;
+      border-radius: 8px;
+      padding: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 80px;
+    }
+    
+    .compass-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+    }
+    
+    .compass-direction {
+      font-size: 12px;
+      font-weight: bold;
+      color: #333;
+      width: 20px;
+      text-align: center;
+    }
+    
+    .compass-arrow {
+      font-size: 24px;
+      color: #007bff;
+      margin: 2px 0;
+    }
+    
+    .compass-north {
+      color: #dc3545;
+      font-weight: bold;
+    }
+    
+    /* Updated positioning for status displays */
+    #etaDisplay, #telemetryDisplay, #statusDisplay, #seatStatusDisplay {
+      position: absolute; z-index: 1000;
+      padding: 8px 12px; border-radius: 8px; font-weight: 600;
+      font-size: 15px; color: #333; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      border: 1px solid #ccc; max-width: 300px;
+      word-wrap: break-word;
+    }
+    
+    /* Position ETA at bottom left (above zoom control) */
+    #etaDisplay { 
+      bottom: 80px; 
+      left: 20px; 
+      background: linear-gradient(to right, #ffffff, #f0f0f0);
+    }
+    
+    /* Position telemetry above ETA */
+    #telemetryDisplay { 
+      bottom: 130px; 
+      left: 20px; 
+      background: linear-gradient(to right, #ffffff, #f0f0f0);
+    }
+    
+    /* Position status at top left (away from zoom) */
+    #statusDisplay {
+      top: 20px;
+      left: 20px;
+      background-color: #ffc107;
+      transition: background-color 0.3s ease;
+    }
+    
+    /* Position seat status below main status */
+    #seatStatusDisplay {
+      top: 60px;
+      left: 20px;
+      background-color: #ffc107;
+      transition: background-color 0.3s ease;
+    }
+    
+    /* Ensure Leaflet controls have proper spacing */
+    .leaflet-top.leaflet-left {
+      margin-top: 100px;
+    }
+    
+    .leaflet-bottom.leaflet-left {
+      margin-bottom: 160px;
+    }
+
+    /* Mobile-responsive route planner */
+    .leaflet-routing-container {
+      margin-top: 100px !important;
+      max-height: 300px !important;
+      overflow-y: auto !important;
+      font-size: 16px !important;
+      width: 90% !important;
+      max-width: 350px !important;
+    }
+    
+    .leaflet-routing-alt {
+      font-size: 16px !important;
+      line-height: 1.4 !important;
+    }
+    
+    .leaflet-routing-instructions {
+      font-size: 16px !important;
+    }
+    
+    .leaflet-routing-instructions-distance {
+      font-size: 16px !important;
+      font-weight: bold !important;
+    }
+    
+    .leaflet-routing-collapse-btn {
+      font-size: 18px !important;
+      padding: 10px !important;
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+      #recenterBtn, #toggleDirectionBtn, #refreshBtn, #timeBtn {
+        padding: 12px 16px;
+        font-size: 18px;
+      }
+      
+      #etaDisplay, #telemetryDisplay, #statusDisplay, #seatStatusDisplay {
+        font-size: 16px;
+        padding: 10px 14px;
+        max-width: 280px;
+      }
+      
+      #compass {
+        bottom: 15px;
+        padding: 6px;
+        min-width: 70px;
+      }
+      
+      .compass-arrow {
+        font-size: 20px;
+      }
+      
+      .compass-direction {
+        font-size: 10px;
+      }
+      
+      .leaflet-routing-container {
+        font-size: 18px !important;
+        width: 95% !important;
+      }
+    }
+
+    @media (max-width: 480px) {
+      #recenterBtn, #toggleDirectionBtn, #refreshBtn, #timeBtn {
+        padding: 10px 12px;
+        font-size: 16px;
+      }
+      
+      #timeBtn {
+        min-width: 160px;
+        font-size: 14px;
+      }
+      
+      #etaDisplay, #telemetryDisplay, #statusDisplay, #seatStatusDisplay {
+        font-size: 14px;
+        max-width: 250px;
+        left: 10px;
+      }
+      
+      #etaDisplay { bottom: 70px; }
+      #telemetryDisplay { bottom: 120px; }
+      #statusDisplay { top: 10px; left: 10px; }
+      #seatStatusDisplay { top: 50px; left: 10px; }
+      
+      #compass {
+        bottom: 10px;
+        min-width: 60px;
+      }
+      
+      .compass-arrow {
+        font-size: 18px;
+      }
+      
+      .compass-direction {
+        font-size: 9px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="map">Loading map...</div>
+  <button id="recenterBtn">📍 Re-center</button>
+  <button id="toggleDirectionBtn">🔄 Toggle Route Direction</button>
+  <button id="refreshBtn">🔄 Refresh</button>
+  <button id="timeBtn">🕒 BD Time: --:-- --</button>
+  
+  <!-- Proper Arrow Compass -->
+  <div id="compass" title="Click to reorient to North">
+    <div class="compass-row">
+      <div class="compass-direction compass-north">N</div>
+    </div>
+    <div class="compass-row">
+      <div class="compass-direction">W</div>
+      <div class="compass-arrow">↑</div>
+      <div class="compass-direction">E</div>
+    </div>
+    <div class="compass-row">
+      <div class="compass-direction">S</div>
+    </div>
+  </div>
+  
+  <!-- Updated order and positioning -->
+  <div id="statusDisplay">🟡 Checking shuttle status...</div>
+  <div id="seatStatusDisplay">🟡 Checking seat status...</div>
+  <div id="telemetryDisplay">🚀 Speed: -- km/h   🧭 Course: --°   📏 Altitude: -- m</div>
+  <div id="etaDisplay">🕒 ETA: -- min   📏 -- m</div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
+
+  <script>
+    window.onload = function () {
+      // Demo configuration - replace with your actual Firebase config
+      const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT.firebaseapp.com",
+        databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_PROJECT.appspot.com",
+        messagingSenderId: "123456789",
+        appId: "YOUR_APP_ID"
+      };
+
+      // Initialize with demo data if Firebase config is not set
+      let useDemoData = true;
+      
+      try {
+        if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
+          firebase.initializeApp(firebaseConfig);
+          useDemoData = false;
+        }
+      } catch (e) {
+        console.log("Using demo data mode");
+        useDemoData = true;
+      }
+
+      const map = L.map("map").setView([23.7808, 90.4072], 16);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors", maxZoom: 22
+      }).addTo(map);
+
+      const searchableLayer = L.layerGroup().addTo(map);
+      const shuttleIcon = L.divIcon({ className: 'shuttle-icon', html: '🚌', iconSize: [30, 30], iconAnchor: [15, 15] });
+      const studentIcon = L.divIcon({ className: 'student-icon', html: '🧑‍🎓', iconSize: [30, 30], iconAnchor: [15, 15] });
+
+      let studentLat = null, studentLon = null, studentMarker = null;
+      let shuttleMarker = null, routeControl = null, arrivalNotified = false;
+      let routeFromStudent = false;
+      let lastUpdateTime = null;
+      let currentRotation = 0;
+
+      // Demo shuttle data
+      let demoShuttleData = {
+        lat: "23°46.8500'N",
+        lon: "90°25.2000'E",
+        fix: "Active",
+        bus_seat_status: "Available",
+        speed_kmh: "25.5",
+        course_deg: "45",
+        altitude_m: "15"
+      };
+
+      // Simulate shuttle movement for demo
+      function updateDemoShuttlePosition() {
+        if (!useDemoData) return;
+        
+        // Move shuttle in a small rectangular pattern around UIU
+        const baseLat = 23.7808;
+        const baseLon = 90.4072;
+        const now = Date.now() / 60000; // minutes
+        
+        // Calculate position in a rectangular path
+        const progress = (now % 4) / 4; // 4-minute cycle
+        let lat, lon;
+        
+        if (progress < 0.25) {
+          // North movement
+          lat = baseLat + 0.002 * (progress / 0.25);
+          lon = baseLon;
+        } else if (progress < 0.5) {
+          // East movement
+          lat = baseLat + 0.002;
+          lon = baseLon + 0.002 * ((progress - 0.25) / 0.25);
+        } else if (progress < 0.75) {
+          // South movement
+          lat = baseLat + 0.002 * (1 - (progress - 0.5) / 0.25);
+          lon = baseLon + 0.002;
+        } else {
+          // West movement
+          lat = baseLat;
+          lon = baseLon + 0.002 * (1 - (progress - 0.75) / 0.25);
+        }
+        
+        // Update demo data
+        demoShuttleData.lat = convertToDMS(lat, 'lat');
+        demoShuttleData.lon = convertToDMS(lon, 'lon');
+        demoShuttleData.speed_kmh = (20 + Math.random() * 15).toFixed(1);
+        demoShuttleData.course_deg = Math.floor(Math.random() * 360).toString();
+        
+        // Toggle seat status occasionally
+        if (Math.random() > 0.9) {
+          demoShuttleData.bus_seat_status = 
+            demoShuttleData.bus_seat_status === "Available" ? "Not Available" : "Available";
+        }
+        
+        // Process the demo data
+        processShuttleData(demoShuttleData);
+      }
+
+      function convertToDMS(decimal, type) {
+        const absDecimal = Math.abs(decimal);
+        const degrees = Math.floor(absDecimal);
+        const minutes = (absDecimal - degrees) * 60;
+        const direction = type === 'lat' ? 
+          (decimal >= 0 ? 'N' : 'S') : 
+          (decimal >= 0 ? 'E' : 'W');
+        
+        return `${degrees}°${minutes.toFixed(4)}'${direction}`;
+      }
+
+      // Bangladesh Time Display Function
+      function updateBangladeshTime() {
+        const now = new Date();
+        
+        // Bangladesh is UTC+6
+        const bangladeshOffset = 6 * 60; // 6 hours in minutes
+        const localOffset = now.getTimezoneOffset(); // in minutes
+        const bangladeshTime = new Date(now.getTime() + (bangladeshOffset + localOffset) * 60000);
+        
+        let hours = bangladeshTime.getHours();
+        let minutes = bangladeshTime.getMinutes();
+        let seconds = bangladeshTime.getSeconds();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        
+        // Convert to 12-hour format
+        hours = hours % 12;
+        hours = hours ? hours : 12; // the hour '0' should be '12'
+        
+        // Add leading zeros
+        minutes = minutes < 10 ? '0' + minutes : minutes;
+        seconds = seconds < 10 ? '0' + seconds : seconds;
+        
+        const timeString = `${hours}:${minutes}:${seconds} ${ampm}`;
+        document.getElementById('timeBtn').innerText = `🕒 BD Time: ${timeString}`;
+      }
+
+      // Update time immediately and then every second
+      updateBangladeshTime();
+      setInterval(updateBangladeshTime, 1000);
+
+      // Start demo data updates if in demo mode
+      if (useDemoData) {
+        setInterval(updateDemoShuttlePosition, 3000);
+        // Initial update
+        setTimeout(updateDemoShuttlePosition, 1000);
+      }
+
+      // Compass click handler - reorient to North
+      document.getElementById('compass').addEventListener('click', function() {
+        map.setView(map.getCenter(), map.getZoom());
+      });
+
+      // Update compass arrow based on map movement or shuttle direction
+      function updateCompassArrow(heading) {
+        const arrow = document.querySelector('.compass-arrow');
+        const directions = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+        const index = Math.round(heading / 45) % 8;
+        arrow.textContent = directions[index];
+        arrow.style.transform = `rotate(${heading}deg)`;
+      }
+
+      // Initialize compass
+      updateCompassArrow(0);
+
+      function processShuttleData(data) {
+        if (!data) return;
+
+        const statusDisplay = document.getElementById("statusDisplay");
+        
+        // 🚌 Check shuttle status based on fix status
+        if (data.fix === "Active") {
+          statusDisplay.innerText = "🟢 Shuttle Online";
+          statusDisplay.style.backgroundColor = "#28a745";
+        } else {
+          statusDisplay.innerText = "🔴 Shuttle Offline";
+          statusDisplay.style.backgroundColor = "#dc3545";
+        }
+
+        // 🪑 Seat Status
+        const seatStatus = data.bus_seat_status || "Unknown";
+        const seatStatusDisplay = document.getElementById("seatStatusDisplay");
+
+        if (seatStatus === "Available") {
+          seatStatusDisplay.innerText = "🟢 Seats Available";
+          seatStatusDisplay.style.backgroundColor = "#28a745";
+        } else if (seatStatus === "Not Available") {
+          seatStatusDisplay.innerText = "🔴 No Seats Available";
+          seatStatusDisplay.style.backgroundColor = "#dc3545";
+        } else {
+          seatStatusDisplay.innerText = "🟡 Checking seat status...";
+          seatStatusDisplay.style.backgroundColor = "#ffc107";
+        }
+
+        const lat = parseCoordinate(data.lat);
+        const lon = parseCoordinate(data.lon);
+
+        const speed = data.speed_kmh || "--";
+        const course = data.course_deg || "--";
+        const altitude = data.altitude_m || "--";
+
+        document.getElementById("telemetryDisplay").innerText =
+          `🚀 Speed: ${speed} km/h   🧭 Course: ${course}°   📏 Altitude: ${altitude} m`;
+
+        // Update compass with course data
+        if (course !== "--") {
+          updateCompassArrow(parseFloat(course));
+        }
+
+        if (!isNaN(lat) && !isNaN(lon)) {
+          if (shuttleMarker) {
+            shuttleMarker.setLatLng([lat, lon]);
+          } else {
+            shuttleMarker = L.marker([lat, lon], { icon: shuttleIcon, title: "Shuttle Location" })
+              .addTo(searchableLayer)
+              .bindPopup("🚌 Shuttle Location")
+              .openPopup();
+          }
+
+          if (!studentLat || !studentLon) {
+            map.setView([lat, lon], 18);
+            return;
+          }
+
+          updateRoute();
+
+          const { eta, meters } = getETA(studentLat, studentLon, lat, lon);
+          document.getElementById("etaDisplay").innerText = `🕒 ETA: ${eta} min   📏 ${meters} m`;
+
+          if (meters < 100 && !arrivalNotified) {
+            arrivalNotified = true;
+            L.popup()
+              .setLatLng([lat, lon])
+              .setContent("🚌 Shuttle is arriving!")
+              .openOn(map);
+            if (window.navigator.vibrate) navigator.vibrate([200, 100, 200]);
+          } else if (meters >= 100) {
+            arrivalNotified = false;
+          }
+        }
+      }
+
+      // Set up Firebase listener if not in demo mode
+      if (!useDemoData) {
+        const db = firebase.database();
+        db.ref("gps").on("value", (snapshot) => {
+          const data = snapshot.val();
+          processShuttleData(data);
+        });
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          studentLat = pos.coords.latitude;
+          studentLon = pos.coords.longitude;
+          studentMarker = L.marker([studentLat, studentLon], { icon: studentIcon, title: "Student Location" })
+            .addTo(searchableLayer)
+            .bindPopup("🧑‍🎓 You are here")
+            .openPopup();
+        },
+        () => {
+          alert("📍 Location access is required to show your position. Please enable location permissions in your browser settings.");
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+
+      document.getElementById("recenterBtn").onclick = () => {
+        if (studentLat && studentLon) {
+          map.setView([studentLat, studentLon], 19);
+        }
+      };
+
+      document.getElementById("toggleDirectionBtn").onclick = () => {
+        routeFromStudent = !routeFromStudent;
+        updateRoute();
+      };
+
+      document.getElementById("refreshBtn").onclick = () => {
+        location.reload();
+      };
+
+      function updateRoute() {
+        if (!shuttleMarker || !studentLat || !studentLon) return;
+
+        const from = routeFromStudent ? [studentLat, studentLon] : [shuttleMarker.getLatLng().lat, shuttleMarker.getLatLng().lng];
+        const to = routeFromStudent ? [shuttleMarker.getLatLng().lat, shuttleMarker.getLatLng().lng] : [studentLat, studentLon];
+
+        if (routeControl) {
+          routeControl.setWaypoints([from, to]);
+        } else {
+          routeControl = L.Routing.control({
+            waypoints: [from, to],
+            routeWhileDragging: false,
+            addWaypoints: false,
+            draggableWaypoints: false,
+            fitSelectedRoutes: false,
+            createMarker: () => null
+          }).addTo(map);
+        }
+
+        const { eta, meters } = getETA(from[0], from[1], to[0], to[1]);
+        document.getElementById("etaDisplay").innerText = `🕒 ETA: ${eta} min   📏 ${meters} m`;
+      }
+
+      function parseCoordinate(coord) {
+        if (typeof coord === "string" && coord.includes("°")) {
+          const match = coord.match(/(\d+)°(\d+\.\d+)'([NSEW])/);
+          if (!match) return NaN;
+          let deg = parseFloat(match[1]);
+          let min = parseFloat(match[2]);
+          let dir = match[3];
+          let dec = deg + (min / 60);
+          if (dir === 'S' || dir === 'W') dec *= -1;
+          return dec;
+        }
+        return parseFloat(coord);
+      }
+
+      function getETA(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distanceKm = R * c;
+        const distanceM = Math.round(distanceKm * 1000);
+
+        const avgSpeedKmh = 20;
+        const etaMin = Math.round((distanceKm / avgSpeedKmh) * 60);
+
+        return { eta: etaMin, meters: distanceM };
+      }
+    };
+  </script>
+</body>
+</html>
